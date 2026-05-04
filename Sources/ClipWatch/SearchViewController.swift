@@ -1,8 +1,24 @@
 import AppKit
 
 // MARK: - SearchViewController
+//
 // The floating panel's content: a search field on top, clip list below.
-// The search field always holds focus; ↑↓/Enter/Esc are intercepted via delegate.
+//
+// Key routing strategy:
+//   NSEvent.addLocalMonitorForEvents intercepts ↑↓/↩/⎋/⌘P/⌘⌫ before
+//   the field editor sees them. This is reliable in NSPanel with
+//   .nonactivatingPanel where NSTextFieldDelegate.control(_:textView:doCommandBy:)
+//   is not delivered consistently. The monitor is installed when the panel
+//   appears (prepareForDisplay) and torn down when it hides (reset) to
+//   avoid leaking.
+//
+// Layout:
+//   [🔍 Search clipboard history…                      ]
+//   ──────────────────────────────────────────────────
+//   [app icon] [content preview...............] [  2h ]
+//              [Source App Name               ] [ 📌  ]
+//   ──────────────────────────────────────────────────
+//   ↑↓ navigate   ↩ paste   ⌘P pin   ⌘⌫ delete   esc dismiss
 
 final class SearchViewController: NSViewController {
 
@@ -14,27 +30,36 @@ final class SearchViewController: NSViewController {
     private var tableView:   NSTableView!
     private var scrollView:  NSScrollView!
     private var emptyLabel:  NSTextField!
+    private var keyMonitor:  Any?   // local key-down monitor
 
     // MARK: - View lifecycle
 
     override func loadView() {
-        let root = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 520, height: 420))
+        let root = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 540, height: 440))
         root.blendingMode  = .behindWindow
-        root.material      = .hudWindow
+        root.material      = .popover
         root.state         = .active
         root.wantsLayer    = true
         root.layer?.cornerRadius = 12
         root.layer?.masksToBounds = true
         view = root
 
-        setupSearchField()
+        setupSearchArea()
         setupSeparator()
         setupTableView()
         setupEmptyLabel()
-        setupKeyboardShortcutHint()
+        setupHintBar()
     }
 
-    private func setupSearchField() {
+    private func setupSearchArea() {
+        let icon = NSImageView()
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.image             = NSImage(systemSymbolName: "magnifyingglass",
+                                        accessibilityDescription: nil)
+        icon.contentTintColor  = .tertiaryLabelColor
+        icon.imageScaling      = .scaleProportionallyDown
+        view.addSubview(icon)
+
         searchField = NSTextField(frame: .zero)
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.placeholderString = "Search clipboard history…"
@@ -45,9 +70,15 @@ final class SearchViewController: NSViewController {
         searchField.textColor         = .labelColor
         searchField.delegate          = self
         view.addSubview(searchField)
+
         NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            icon.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalToConstant: 16),
+
             searchField.topAnchor.constraint(equalTo: view.topAnchor, constant: 14),
-            searchField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            searchField.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
             searchField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             searchField.heightAnchor.constraint(equalToConstant: 26),
         ])
@@ -59,7 +90,7 @@ final class SearchViewController: NSViewController {
         sep.boxType = .separator
         view.addSubview(sep)
         NSLayoutConstraint.activate([
-            sep.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 10),
+            sep.topAnchor.constraint(equalTo: view.topAnchor, constant: 54),
             sep.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             sep.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             sep.heightAnchor.constraint(equalToConstant: 1),
@@ -69,7 +100,7 @@ final class SearchViewController: NSViewController {
     private func setupTableView() {
         tableView = NSTableView()
         tableView.headerView              = nil
-        tableView.rowHeight               = 50
+        tableView.rowHeight               = 52
         tableView.selectionHighlightStyle = .regular
         tableView.allowsEmptySelection    = false
         tableView.focusRingType           = .none
@@ -81,20 +112,21 @@ final class SearchViewController: NSViewController {
         col.isEditable = false
         tableView.addTableColumn(col)
 
-        tableView.delegate   = self
-        tableView.dataSource = self
-        tableView.target     = self
+        tableView.delegate     = self
+        tableView.dataSource   = self
+        tableView.target       = self
         tableView.doubleAction = #selector(rowDoubleClicked)
 
         scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.documentView     = tableView
+        scrollView.documentView        = tableView
         scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground  = false
-        scrollView.borderType       = .noBorder
+        scrollView.drawsBackground     = false
+        scrollView.borderType          = .noBorder
         view.addSubview(scrollView)
+
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: 52),
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: 55),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -28),
@@ -104,9 +136,9 @@ final class SearchViewController: NSViewController {
     private func setupEmptyLabel() {
         emptyLabel = NSTextField(labelWithString: "No clips found")
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
-        emptyLabel.textColor  = .tertiaryLabelColor
-        emptyLabel.font       = .systemFont(ofSize: 13)
-        emptyLabel.isHidden   = true
+        emptyLabel.textColor = .tertiaryLabelColor
+        emptyLabel.font      = .systemFont(ofSize: 13)
+        emptyLabel.isHidden  = true
         view.addSubview(emptyLabel)
         NSLayoutConstraint.activate([
             emptyLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -114,17 +146,18 @@ final class SearchViewController: NSViewController {
         ])
     }
 
-    private func setupKeyboardShortcutHint() {
-        let hint = NSTextField(labelWithString: "↑↓ navigate   ↩ paste   ⌘P pin   ⌘⌫ delete   esc dismiss")
+    private func setupHintBar() {
+        let hint = NSTextField(labelWithString:
+            "↑↓ navigate   ↩ paste   ⌘P pin   ⌘⌫ delete   esc dismiss")
         hint.translatesAutoresizingMaskIntoConstraints = false
-        hint.textColor  = .quaternaryLabelColor
-        hint.font       = .systemFont(ofSize: 10)
-        hint.alignment  = .center
+        hint.textColor = .quaternaryLabelColor
+        hint.font      = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        hint.alignment = .center
         view.addSubview(hint)
         NSLayoutConstraint.activate([
             hint.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
             hint.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
-            hint.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -6),
+            hint.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -7),
         ])
     }
 
@@ -134,13 +167,48 @@ final class SearchViewController: NSViewController {
         searchField.stringValue = ""
         reload(query: "")
         view.window?.makeFirstResponder(searchField)
+        installKeyMonitor()
     }
 
     func reset() {
+        removeKeyMonitor()
         searchField.stringValue = ""
         clips = []
         tableView.reloadData()
     }
+
+    // MARK: - Key monitor
+
+    private func installKeyMonitor() {
+        removeKeyMonitor()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            return self.handleKey(event)
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
+    }
+
+    /// Returns nil to consume the event; returns the event to let it fall through.
+    private func handleKey(_ event: NSEvent) -> NSEvent? {
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        switch event.keyCode {
+        case 125: moveSelection(by: 1);  return nil         // ↓
+        case 126: moveSelection(by: -1); return nil         // ↑
+        case 36, 76: pasteSelected();    return nil         // ↩  numpad-↩
+        case 53:  onDismiss?();          return nil         // ⎋
+        case 35 where mods == .command:                     // ⌘P
+            togglePinSelected(); return nil
+        case 51 where mods == .command:                     // ⌘⌫
+            deleteSelected(); return nil
+        default:
+            return event
+        }
+    }
+
+    // MARK: - Data
 
     private func reload(query: String) {
         clips = query.isEmpty
@@ -193,32 +261,6 @@ extension SearchViewController: NSTextFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
         reload(query: searchField.stringValue)
     }
-
-    func control(_ control: NSControl, textView: NSTextView,
-                 doCommandBy commandSelector: Selector) -> Bool {
-        switch commandSelector {
-        case #selector(NSResponder.insertNewline(_:)):
-            pasteSelected(); return true
-        case #selector(NSResponder.cancelOperation(_:)):
-            onDismiss?(); return true
-        case #selector(NSResponder.moveUp(_:)):
-            moveSelection(by: -1); return true
-        case #selector(NSResponder.moveDown(_:)):
-            moveSelection(by: 1); return true
-        case #selector(NSResponder.deleteBackward(_:)) where
-            NSApp.currentEvent?.modifierFlags.contains(.command) == true:
-            deleteSelected(); return true
-        default:
-            // ⌘P for pin (performKeyEquivalent doesn't fire in delegate; catch it here)
-            if let e = NSApp.currentEvent,
-               e.type == .keyDown,
-               e.keyCode == 35,   // P
-               e.modifierFlags.contains(.command) {
-                togglePinSelected(); return true
-            }
-            return false
-        }
-    }
 }
 
 // MARK: - NSTableViewDataSource & Delegate
@@ -237,7 +279,9 @@ extension SearchViewController: NSTableViewDataSource, NSTableViewDelegate {
 // MARK: - ClipCellView
 
 final class ClipCellView: NSView {
+    private let appIcon   = NSImageView()
     private let preview   = NSTextField(labelWithString: "")
+    private let subtitle  = NSTextField(labelWithString: "")
     private let timestamp = NSTextField(labelWithString: "")
     private let pinIcon   = NSImageView()
 
@@ -248,43 +292,73 @@ final class ClipCellView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     private func setup() {
-        preview.translatesAutoresizingMaskIntoConstraints   = false
-        timestamp.translatesAutoresizingMaskIntoConstraints = false
-        pinIcon.translatesAutoresizingMaskIntoConstraints   = false
+        [appIcon, preview, subtitle, timestamp, pinIcon].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+        }
 
-        preview.font              = .systemFont(ofSize: 13)
-        preview.textColor         = .labelColor
-        preview.lineBreakMode     = .byTruncatingTail
+        // App icon — small, rounded
+        appIcon.imageScaling      = .scaleProportionallyDown
+        appIcon.wantsLayer        = true
+        appIcon.layer?.cornerRadius = 4
+        appIcon.layer?.masksToBounds = true
+
+        // Content preview — line 1, normal weight
+        preview.font                 = .systemFont(ofSize: 13, weight: .regular)
+        preview.textColor            = .labelColor
+        preview.lineBreakMode        = .byTruncatingTail
         preview.maximumNumberOfLines = 1
 
-        timestamp.font            = .systemFont(ofSize: 11)
-        timestamp.textColor       = .secondaryLabelColor
-        timestamp.alignment       = .right
+        // Source app name — line 2, lighter
+        subtitle.font                 = .systemFont(ofSize: 11)
+        subtitle.textColor            = .tertiaryLabelColor
+        subtitle.lineBreakMode        = .byTruncatingTail
+        subtitle.maximumNumberOfLines = 1
 
-        pinIcon.image             = NSImage(systemSymbolName: "pin.fill",
+        // Timestamp — top-right
+        timestamp.font      = .systemFont(ofSize: 11)
+        timestamp.textColor = .secondaryLabelColor
+        timestamp.alignment = .right
+
+        // Pin badge — bottom-right
+        pinIcon.image            = NSImage(systemSymbolName: "pin.fill",
                                            accessibilityDescription: nil)
-        pinIcon.contentTintColor  = .systemOrange
-        pinIcon.imageScaling      = .scaleProportionallyDown
+        pinIcon.contentTintColor = .systemOrange
+        pinIcon.imageScaling     = .scaleProportionallyDown
 
-        [preview, timestamp, pinIcon].forEach { addSubview($0) }
+        [appIcon, preview, subtitle, timestamp, pinIcon].forEach { addSubview($0) }
 
         NSLayoutConstraint.activate([
+            // App icon — left column, centered vertically
+            appIcon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            appIcon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            appIcon.widthAnchor.constraint(equalToConstant: 22),
+            appIcon.heightAnchor.constraint(equalToConstant: 22),
+
+            // Timestamp — top-right
             timestamp.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            timestamp.centerYAnchor.constraint(equalTo: centerYAnchor),
-            timestamp.widthAnchor.constraint(equalToConstant: 72),
+            timestamp.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            timestamp.widthAnchor.constraint(equalToConstant: 68),
 
-            pinIcon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            pinIcon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            pinIcon.widthAnchor.constraint(equalToConstant: 10),
-            pinIcon.heightAnchor.constraint(equalToConstant: 12),
+            // Pin icon — bottom-right
+            pinIcon.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            pinIcon.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            pinIcon.widthAnchor.constraint(equalToConstant: 9),
+            pinIcon.heightAnchor.constraint(equalToConstant: 11),
 
-            preview.leadingAnchor.constraint(equalTo: pinIcon.trailingAnchor, constant: 6),
+            // Preview — top text line
+            preview.leadingAnchor.constraint(equalTo: appIcon.trailingAnchor, constant: 10),
             preview.trailingAnchor.constraint(equalTo: timestamp.leadingAnchor, constant: -8),
-            preview.centerYAnchor.constraint(equalTo: centerYAnchor),
+            preview.topAnchor.constraint(equalTo: topAnchor, constant: 9),
+
+            // Subtitle — bottom text line
+            subtitle.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
+            subtitle.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
+            subtitle.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
         ])
     }
 
     func configure(with clip: ClipStore.Clip) {
+        // Collapse newlines into a readable one-liner
         let oneLiner = clip.content
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -293,14 +367,28 @@ final class ClipCellView: NSView {
         preview.stringValue   = oneLiner
         timestamp.stringValue = relativeTime(clip.ts)
         pinIcon.isHidden      = !clip.pinned
+
+        // Source app icon + display name
+        if let bundleId = clip.source,
+           let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+            appIcon.image = NSWorkspace.shared.icon(forFile: appURL.path)
+            let info = Bundle(url: appURL)?.infoDictionary
+            let name = info?["CFBundleDisplayName"] as? String
+                    ?? info?["CFBundleName"] as? String
+                    ?? bundleId
+            subtitle.stringValue = name
+        } else {
+            appIcon.image        = nil
+            subtitle.stringValue = clip.source ?? ""
+        }
     }
 
     private func relativeTime(_ date: Date) -> String {
         let s = Int(Date().timeIntervalSince(date))
         switch s {
-        case 0..<60:     return "now"
-        case 60..<3600:  return "\(s / 60)m"
-        case 3600..<86400: return "\(s / 3600)h"
+        case 0..<60:         return "now"
+        case 60..<3600:      return "\(s / 60)m"
+        case 3600..<86400:   return "\(s / 3600)h"
         case 86400..<604800: return "\(s / 86400)d"
         default:
             let f = DateFormatter(); f.dateFormat = "MMM d"
