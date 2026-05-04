@@ -12,7 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotkey   = HotkeyManager()
     private let panel    = PanelController()
 
-    private var statusItem: NSStatusItem!
+    private var statusItem:     NSStatusItem!
+    private var pendingUpdate:  UpdateInfo?
 
     // MARK: - Launch
 
@@ -31,6 +32,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: .clipStoreDidChange,
             object: nil
         )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(updateAvailable(_:)),
+            name: .updateAvailable,
+            object: nil
+        )
+        UpdateChecker.checkInBackground()
     }
 
     // MARK: - Status Item
@@ -49,6 +58,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildMenu() {
         let menu   = NSMenu()
+
+        // Update banner — appears only when a newer release is available
+        if let update = pendingUpdate {
+            let updateItem = NSMenuItem(
+                title:  "⬆ Update available: v\(update.tagName)",
+                action: #selector(openUpdatePage),
+                keyEquivalent: ""
+            )
+            updateItem.target = self
+            menu.addItem(updateItem)
+            menu.addItem(.separator())
+        }
+
         let clips  = store.recent(limit: Prefs.menuCount())
 
         for clip in clips {
@@ -79,6 +101,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
+        let clearItem = NSMenuItem(title: "Clear History…",
+                                   action: #selector(clearAllHistory),
+                                   keyEquivalent: "")
+        clearItem.target = self
+        menu.addItem(clearItem)
+        menu.addItem(.separator())
         let prefs = NSMenuItem(title: "Preferences…",
                                action: #selector(openPreferences),
                                keyEquivalent: ",")
@@ -98,6 +126,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             self.paste(content)
         }
+    }
+
+    @objc private func updateAvailable(_ note: Notification) {
+        pendingUpdate = note.object as? UpdateInfo
+        buildMenu()
+    }
+
+    @objc private func openUpdatePage() {
+        if let url = pendingUpdate?.releaseURL {
+            NSWorkspace.shared.open(url)
+        } else {
+            UpdateChecker.openReleasePage()
+        }
+    }
+
+    @objc private func clearAllHistory() {
+        let alert = NSAlert()
+        alert.messageText     = "Clear all clipboard history?"
+        alert.informativeText = "This permanently deletes all clips. Pinned items are also removed. This cannot be undone."
+        alert.addButton(withTitle: "Clear History")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        store.deleteAll()
     }
 
     @objc private func openPreferences() {

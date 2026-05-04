@@ -36,6 +36,10 @@ final class PanelController {
     /// True once the user has authenticated this panel session.
     private(set) var isAuthenticated = false
 
+    /// Timestamp of the last successful Touch ID / password auth.
+    /// Persists across hide/show cycles so the unlock window is honoured.
+    private var lastAuthTime: Date?
+
     var isVisible: Bool { panel?.isVisible ?? false }
 
     func toggle() { isVisible ? hide() : show() }
@@ -47,7 +51,12 @@ final class PanelController {
         previousApp = NSWorkspace.shared.frontmostApplication
 
         if Prefs.isSecureModeEnabled() {
-            authenticateForPanel()
+            if isWithinUnlockWindow() {
+                isAuthenticated = true
+                presentPanel()
+            } else {
+                authenticateForPanel()
+            }
         } else {
             isAuthenticated = false
             presentPanel()
@@ -58,7 +67,23 @@ final class PanelController {
         if let m = clickMonitor { NSEvent.removeMonitor(m); clickMonitor = nil }
         panel?.orderOut(nil)
         searchVC?.reset()
-        isAuthenticated = false   // reset — next open starts fresh
+        isAuthenticated = false   // reset per-session display flag; lastAuthTime intentionally preserved
+    }
+
+    // MARK: - Unlock window
+
+    /// Returns true if the user authenticated recently enough to skip re-auth.
+    private func isWithinUnlockWindow() -> Bool {
+        guard let t = lastAuthTime else { return false }
+        let secs = Prefs.unlockDurationSeconds()
+        if secs == -1 { return true }                            // until app restarts
+        if secs == 0  { return false }                           // every use
+        return Date().timeIntervalSince(t) < Double(secs)
+    }
+
+    /// Records the current time as the last successful authentication.
+    private func recordAuth() {
+        lastAuthTime = Date()
     }
 
     // MARK: - Authentication
@@ -80,6 +105,7 @@ final class PanelController {
                 guard let self else { return }
                 if success {
                     self.isAuthenticated = true
+                    self.recordAuth()
                     self.presentPanel()
                 }
                 // Failure/cancel: panel stays hidden, no error shown.
@@ -154,6 +180,7 @@ final class PanelController {
             self?.authenticateForClip { success in
                 if success {
                     self?.isAuthenticated = true
+                    self?.recordAuth()
                     completion()
                 }
             }

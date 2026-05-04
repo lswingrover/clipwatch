@@ -11,6 +11,7 @@ enum Prefs {
     static let excludedApps    = "excludedApps"     // [String] bundle IDs
     static let excludedURLs    = "excludedURLs"     // [String] domain/URL patterns
     static let secureMode      = "secureMode"       // Bool — require Touch ID to open panel
+    static let unlockDuration  = "unlockDuration"   // Int  — seconds to stay unlocked (0=always ask, -1=session)
     static let launchAtLogin   = "launchAtLogin"    // Bool
 
     static let defaultExcludedApps: [String] = [
@@ -40,6 +41,13 @@ enum Prefs {
 
     static func isSecureModeEnabled() -> Bool {
         UserDefaults.standard.bool(forKey: secureMode)
+    }
+
+    /// Seconds to stay unlocked after a successful Touch ID authentication.
+    /// 0 = authenticate every use; -1 = stay unlocked until app restarts.
+    static func unlockDurationSeconds() -> Int {
+        // UserDefaults returns 0 for missing keys, which is our "every use" default — no special casing needed.
+        return UserDefaults.standard.integer(forKey: unlockDuration)
     }
 
     static func screenMode() -> String {

@@ -45,16 +45,20 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
 final class PreferencesViewController: NSViewController {
 
-    private var shortcutField:    ShortcutRecorderField!
-    private var menuCountStepper: NSStepper!
-    private var menuCountLabel:   NSTextField!
-    private var retentionSlider:  NSSlider!
-    private var retentionLabel:   NSTextField!
-    private var screenSegment:    NSSegmentedControl!
-    private var loginToggle:      NSButton!
-    private var secureModeToggle: NSButton!
-    private var excludedTable:    NSTableView!
-    private var items:            [ExclusionItem] = []
+    private var shortcutField:       ShortcutRecorderField!
+    private var menuCountStepper:    NSStepper!
+    private var menuCountLabel:      NSTextField!
+    private var retentionSlider:     NSSlider!
+    private var retentionLabel:      NSTextField!
+    private var screenSegment:       NSSegmentedControl!
+    private var loginToggle:         NSButton!
+    private var secureModeToggle:    NSButton!
+    private var unlockDurationPopup: NSPopUpButton!
+    private var excludedTable:       NSTableView!
+    private var items:               [ExclusionItem] = []
+
+    private let unlockDurationValues = [0, 300, 900, 1800, 3600, -1]
+    private let unlockDurationLabels = ["Every use", "5 minutes", "15 minutes", "30 minutes", "1 hour", "Until app restarts"]
 
     private let margin: CGFloat     = 20
     private let labelWidth: CGFloat = 180
@@ -137,6 +141,20 @@ final class PreferencesViewController: NSViewController {
             action: #selector(secureModeToggled)
         )
         controlsStack.addArrangedSubview(secureModeToggle)
+
+        unlockDurationPopup = NSPopUpButton()
+        for label in unlockDurationLabels { unlockDurationPopup.addItem(withTitle: label) }
+        unlockDurationPopup.target = self
+        unlockDurationPopup.action = #selector(unlockDurationChanged)
+        controlsStack.addArrangedSubview(makeRow("Stay unlocked for", unlockDurationPopup))
+        controlsStack.setCustomSpacing(14, after: controlsStack.arrangedSubviews.last!)
+
+        // Data
+        controlsStack.addArrangedSubview(sectionHeader("Data"))
+        let clearBtn = NSButton(title: "Clear All History…",
+                                target: self, action: #selector(clearAllHistory))
+        clearBtn.bezelStyle = .rounded
+        controlsStack.addArrangedSubview(clearBtn)
         controlsStack.setCustomSpacing(18, after: controlsStack.arrangedSubviews.last!)
 
         // Exclusions header
@@ -268,6 +286,10 @@ final class PreferencesViewController: NSViewController {
         }
 
         secureModeToggle.state = Prefs.isSecureModeEnabled() ? .on : .off
+
+        let storedSecs = Prefs.unlockDurationSeconds()
+        let idx = unlockDurationValues.firstIndex(of: storedSecs) ?? 0
+        unlockDurationPopup.selectItem(at: idx)
     }
 
     // MARK: - Actions
@@ -292,6 +314,27 @@ final class PreferencesViewController: NSViewController {
 
     @objc private func secureModeToggled() {
         UserDefaults.standard.set(secureModeToggle.state == .on, forKey: Prefs.secureMode)
+    }
+
+    @objc private func unlockDurationChanged() {
+        let idx = unlockDurationPopup.indexOfSelectedItem
+        guard idx >= 0, idx < unlockDurationValues.count else { return }
+        UserDefaults.standard.set(unlockDurationValues[idx], forKey: Prefs.unlockDuration)
+    }
+
+    @objc private func clearAllHistory() {
+        let alert = NSAlert()
+        alert.messageText     = "Clear all clipboard history?"
+        alert.informativeText = "This permanently deletes all clips. Pinned items are also removed. This cannot be undone."
+        alert.addButton(withTitle: "Clear History")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        guard let window = view.window else { return }
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn {
+                ClipStore.shared.deleteAll()
+            }
+        }
     }
 
     @objc private func loginToggled() {

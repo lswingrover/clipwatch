@@ -131,6 +131,13 @@ final class ClipStore {
         exec("DELETE FROM clips WHERE id=?", id)
     }
 
+    func deleteAll() {
+        sqlite3_exec(db, "DELETE FROM clips", nil, nil, nil)
+        // Rebuild FTS index to match now-empty table (faster than per-row triggers for bulk delete).
+        sqlite3_exec(db, "INSERT INTO clips_fts(clips_fts) VALUES('rebuild')", nil, nil, nil)
+        NotificationCenter.default.post(name: .clipStoreDidChange, object: nil)
+    }
+
     // MARK: - Read
 
     func recent(limit: Int) -> [Clip] {
