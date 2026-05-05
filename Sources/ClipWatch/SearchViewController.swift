@@ -338,7 +338,7 @@ final class ClipCellView: NSView {
         super.init(frame: frame)
         setup()
     }
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) { return nil }  // not used; prevents fatalError in production
 
     private func setup() {
         [appIcon, preview, subtitle, timestamp, pinIcon].forEach {

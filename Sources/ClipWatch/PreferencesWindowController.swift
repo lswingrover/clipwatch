@@ -28,7 +28,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: win)
         win.delegate = self
     }
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) { return nil }  // not used; prevents fatalError in production
 
     func windowWillClose(_ notification: Notification) {
         NotificationCenter.default.post(name: .hotkeyChanged, object: nil)
@@ -377,7 +377,9 @@ final class PreferencesViewController: NSViewController {
     }
 
     @objc private func openGitHub() {
-        NSWorkspace.shared.open(URL(string: "https://github.com/lswingrover/clipwatch")!)
+        // Guard prevents crash if URL(string:) returns nil (malformed constant).
+        guard let url = URL(string: "https://github.com/lswingrover/clipwatch") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @objc private func clearAllHistory() {
@@ -636,7 +638,7 @@ final class ShortcutRecorderField: NSControl {
         applyBorderColor()
         layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
     }
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder: NSCoder) { return nil }  // not used; prevents fatalError in production
 
     func loadFromDefaults() { needsDisplay = true }
 

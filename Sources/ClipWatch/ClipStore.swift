@@ -42,9 +42,14 @@ final class ClipStore {
     // MARK: - Setup
 
     private func openDatabase() {
-        let appSupport = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("ClipWatch", isDirectory: true)
+        // urls(for:in:) can return an empty array in unusual sandbox configurations;
+        // subscript [0] would crash. Use first with a safe fallback instead.
+        guard let appSupportBase = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            print("ClipStore: could not resolve Application Support directory")
+            return
+        }
+        let appSupport = appSupportBase.appendingPathComponent("ClipWatch", isDirectory: true)
         try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
         let path = appSupport.appendingPathComponent("clips.db").path
         guard sqlite3_open(path, &db) == SQLITE_OK else {
@@ -210,12 +215,15 @@ final class ClipStore {
         }
         var clips: [Clip] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
-            let id        = sqlite3_column_int64(stmt, 0)
-            let content   = String(cString: sqlite3_column_text(stmt, 1))
+            let id = sqlite3_column_int64(stmt, 0)
+            // sqlite3_column_text returns nil for NULL columns or on OOM; guard prevents
+            // passing nil to String(cString:) which is undefined behavior and crashes.
+            guard let rawContent = sqlite3_column_text(stmt, 1) else { continue }
+            let content   = String(cString: rawContent)
             let ts        = Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(stmt, 2)))
             let pinned    = sqlite3_column_int(stmt, 3) != 0
-            let source    = sqlite3_column_type(stmt, 4) != SQLITE_NULL
-                          ? String(cString: sqlite3_column_text(stmt, 4)) : nil
+            let source: String? = (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+                          ? sqlite3_column_text(stmt, 4).map { String(cString: $0) } : nil
             let sensitive = sqlite3_column_int(stmt, 5) != 0
             clips.append(Clip(id: id, content: content, ts: ts,
                               pinned: pinned, source: source, sensitive: sensitive))

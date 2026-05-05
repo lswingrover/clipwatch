@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.4] — 2026-05-05
+### Fixed
+- **AppDelegate `URL(string:)!`** — guarded with `guard let`; silent pasteboard write failure
+  now returns early instead of proceeding with corrupted state.
+- **ClipStore `FileManager.urls().first!`** — replaced with `guard let` and temp directory
+  fallback to avoid crash in sandboxed/restricted environments.
+- **ClipStore `sqlite3_column_text` nil dereference** — guarded with
+  `guard let rawContent = sqlite3_column_text(stmt, 1)` to skip NULL rows instead of
+  passing a nil pointer to `String(cString:)` (undefined behaviour / crash).
+- **PanelController `NSScreen.screens[0]`** — replaced with `.first` guard; `position()`
+  guards on nil screen to avoid crash with no attached displays.
+- **UpdateChecker static URL(string:)! properties** — made Optional with `guard let` checks.
+- **PreferencesWindowController / SearchViewController `fatalError()` in coder inits** —
+  changed to `return nil` (graceful failure instead of guaranteed crash on storyboard decode).
+
+
 ## [Unreleased]
 
 ---

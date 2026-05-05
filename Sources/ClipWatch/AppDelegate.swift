@@ -147,7 +147,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openGitHub() {
-        NSWorkspace.shared.open(URL(string: "https://github.com/lswingrover/clipwatch")!)
+        // Guard prevents crash if URL(string:) ever returns nil (malformed constant).
+        guard let url = URL(string: "https://github.com/lswingrover/clipwatch") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @objc private func openUpdatePage() {
@@ -190,7 +192,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// press ⌘V themselves.
     func paste(_ content: String) {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(content, forType: .string)
+        // setString returns false if the pasteboard is unavailable (e.g. sandboxed denial).
+        // Abort rather than synthesizing ⌘V that would paste stale/empty content.
+        guard NSPasteboard.general.setString(content, forType: .string) else {
+            print("ClipWatch: pasteboard write failed — aborting paste")
+            return
+        }
 
         let src     = CGEventSource(stateID: .combinedSessionState)
         let vKey: CGKeyCode = 9   // kVK_ANSI_V  (Carbon virtual key code for V)

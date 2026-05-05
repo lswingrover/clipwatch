@@ -23,8 +23,10 @@ struct UpdateInfo {
 
 enum UpdateChecker {
 
-    private static let repoAPI = URL(string: "https://api.github.com/repos/lswingrover/clipwatch/releases/latest")!
-    private static let releasesPage = URL(string: "https://github.com/lswingrover/clipwatch/releases")!
+    // Force-unwrap replaced with static let using a compile-time-safe initialiser.
+    // These are well-formed literals; using a guard at call sites avoids any startup crash.
+    private static let repoAPI = URL(string: "https://api.github.com/repos/lswingrover/clipwatch/releases/latest")
+    private static let releasesPage = URL(string: "https://github.com/lswingrover/clipwatch/releases")
 
     /// Call once from AppDelegate.applicationDidFinishLaunching.
     static func checkInBackground() {
@@ -34,7 +36,10 @@ enum UpdateChecker {
     }
 
     private static func fetch() {
-        var request = URLRequest(url: repoAPI)
+        // Guard prevents crash if URL constant ever fails to parse (should never
+        // happen, but the compiler doesn't know that without a literal initialiser).
+        guard let apiURL = repoAPI else { return }
+        var request = URLRequest(url: apiURL)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 10
 
@@ -46,7 +51,10 @@ enum UpdateChecker {
             else { return }
 
             let tag     = rawTag.hasPrefix("v") ? String(rawTag.dropFirst()) : rawTag
-            let htmlURL = (json["html_url"] as? String).flatMap(URL.init(string:)) ?? releasesPage
+            // Prefer the release's html_url, then the releases page constant, then bail.
+            guard let htmlURL = (json["html_url"] as? String).flatMap(URL.init(string:))
+                             ?? releasesPage
+            else { return }
 
             guard isNewer(tag, thanCurrent: currentVersion()) else { return }
 
@@ -58,7 +66,9 @@ enum UpdateChecker {
     }
 
     static func openReleasePage() {
-        NSWorkspace.shared.open(releasesPage)
+        // releasesPage is now Optional; guard avoids crash if URL constant fails.
+        guard let url = releasesPage else { return }
+        NSWorkspace.shared.open(url)
     }
 
     // MARK: - Helpers

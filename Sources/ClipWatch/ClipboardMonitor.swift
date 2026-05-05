@@ -49,10 +49,13 @@ final class ClipboardMonitor {
         let interval = Prefs.pollIntervalSeconds()
         // .default (not .common): avoids firing during menu-tracking and scroll events,
         // which would add latency to UI interactions for no benefit.
-        timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             self?.poll()
         }
-        RunLoop.main.add(timer!, forMode: .default)
+        // Assign before adding to run loop; avoids force-unwrap if RunLoop.add ever
+        // throws or the timer reference is needed in a re-entrancy scenario.
+        timer = t
+        RunLoop.main.add(t, forMode: .default)
     }
 
     private func isAXTrusted() -> Bool {

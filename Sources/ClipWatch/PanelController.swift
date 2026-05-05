@@ -243,10 +243,12 @@ final class PanelController {
 
     private func position() {
         guard let panel else { return }
-        let screen = targetScreen()
-        let sf     = screen.visibleFrame
-        let x = sf.midX - panel.frame.width / 2
-        let y = sf.midY + sf.height * 0.10
+        // targetScreen() returns nil on headless/early launch; skip positioning
+        // rather than crashing. The panel will appear at its default origin.
+        guard let screen = targetScreen() else { return }
+        let sf = screen.visibleFrame
+        let x  = sf.midX - panel.frame.width / 2
+        let y  = sf.midY + sf.height * 0.10
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
@@ -254,9 +256,11 @@ final class PanelController {
     ///
     /// Uses the screen containing the previously frontmost application's window —
     /// no mouse/cursor dependency. Falls back to NSScreen.main.
-    private func targetScreen() -> NSScreen {
+    private func targetScreen() -> NSScreen? {
         if let screen = screenForApp(previousApp) { return screen }
-        return NSScreen.main ?? NSScreen.screens[0]
+        // NSScreen.main is nil on headless systems; NSScreen.screens may also be empty
+        // on early launch or virtual displays. Return nil rather than crashing with [0].
+        return NSScreen.main ?? NSScreen.screens.first
     }
 
     /// Find the NSScreen containing the key window of a running application.
