@@ -9,6 +9,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.1] — 2026-05-05
+
+### Fixed
+- **Search field focus not acquired** — `NSApp.activate` was called *after*
+  `makeKeyAndOrderFront`, so `windowDidBecomeKey` fired while the app was still
+  inactive and `makeFirstResponder` silently failed. Since the window was already
+  key when `activate` completed, `didBecomeKeyNotification` never re-fired.
+  Fixed by calling `NSApp.activate(ignoringOtherApps: true)` *before*
+  `makeKeyAndOrderFront`, and adding a belt-and-suspenders
+  `DispatchQueue.main.async` focus call one runloop pass later.
+
+---
+
 ## [1.5.0] — 2026-05-05
 
 ### Fixed

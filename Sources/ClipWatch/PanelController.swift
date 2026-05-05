@@ -133,13 +133,19 @@ final class PanelController {
 
     private func presentPanel() {
         position()
-        panel?.makeKeyAndOrderFront(nil)
+        // Activate the app BEFORE making the window key.
+        // makeKeyAndOrderFront fires windowDidBecomeKey synchronously; if the app
+        // isn't yet active at that point, makeFirstResponder silently fails and the
+        // window never re-fires didBecomeKeyNotification after activate completes.
         NSApp.activate(ignoringOtherApps: true)
-
-        // Call prepareForDisplay directly rather than async — the panel is now a
-        // regular activating panel so makeKeyAndOrderFront + activate are synchronous
-        // and the window is key by the time we call makeFirstResponder.
+        panel?.makeKeyAndOrderFront(nil)
         searchVC?.prepareForDisplay(isAuthenticated: isAuthenticated)
+        // Belt-and-suspenders: one extra runloop pass guarantees focus even if the
+        // app/window activation handoff hasn't fully settled by the time
+        // prepareForDisplay runs.
+        DispatchQueue.main.async { [weak self] in
+            self?.searchVC?.focusSearchField()
+        }
 
         clickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
