@@ -9,6 +9,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.3] — 2026-05-05
+
+### Added
+- **⌘A selects all text in the search field** — explicitly handled in the key
+  monitor so it always targets the search field regardless of where focus is.
+  Hint bar updated to document the shortcut.
+
+---
+
 ## [1.5.2] — 2026-05-05
 
 ### Fixed

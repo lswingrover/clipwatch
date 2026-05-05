@@ -157,7 +157,7 @@ final class SearchViewController: NSViewController {
 
     private func setupHintBar() {
         let hint = NSTextField(labelWithString:
-            "↑↓ navigate   ↩ paste   ⌘P pin   ⌘S sensitive   ⌘⌫ delete   esc dismiss")
+            "↑↓ navigate   ↩ paste   ⌘A select all   ⌘P pin   ⌘S sensitive   ⌘⌫ delete   esc dismiss")
         hint.translatesAutoresizingMaskIntoConstraints = false
         hint.textColor = .secondaryLabelColor
         hint.font      = .monospacedSystemFont(ofSize: 10, weight: .regular)
@@ -223,6 +223,9 @@ final class SearchViewController: NSViewController {
         case 126: moveSelection(by: -1); return nil         // ↑
         case 36, 76: pasteSelected();    return nil         // ↩  numpad-↩
         case 53:  onDismiss?();          return nil         // ⎋
+        case 0  where mods == .command:                     // ⌘A — select all in search field
+            searchField.currentEditor()?.selectAll(nil)
+            return nil
         case 35 where mods == .command:                     // ⌘P
             togglePinSelected(); return nil
         case 1  where mods == .command:                     // ⌘S
